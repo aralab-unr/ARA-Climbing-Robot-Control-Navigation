@@ -17,10 +17,12 @@ class Star:
     # function to trace back from goal node
     def pathBack(self, bestPath, presentNode):
         lastPath = []
+        lastPath.insert(0,presentNode)
         while presentNode in bestPath:
         #for i in range(1,len(bestPath)):
-            presentNode = bestPath[presentNode][0].id
-            lastPath.append(presentNode)
+            presentNode = bestPath[presentNode].source.id
+            lastPath.insert(0,presentNode)
+        # lastPath.insert(0,bestPath[presentNode].target.id)
         return lastPath, bestPath
 
     def aStar(self, verticeGraph, startNode, goalNode):
@@ -80,7 +82,7 @@ class Star:
                     openList.append(neigh.target.id)
 
                 # replace best path with presentNode
-                bestPath[neigh.target.id] = [neigh.source,neigh.target]
+                bestPath[neigh.target.id] = neigh
                 # if approximate g weight is greater replace
                 gWeight[neigh.target.id] = neigh.distance + gWeight[presentNode]
                 # calculate fScore f(n) = g(n) + h(n)

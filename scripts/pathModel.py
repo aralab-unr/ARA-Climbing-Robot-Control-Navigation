@@ -2,26 +2,33 @@
 import rospy
 from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import Header
-from geometry_msgs.msg import PoseStamped, Point, PoseArray, Quaternion, QuaternionStamped, TransformStamped, Vector3, Transform
-from tf2_geometry_msgs import PointStamped, QuaternionStamped
-import tf2_ros
+from geometry_msgs.msg import Point, Quaternion, Transform, TransformStamped, Vector3, Pose
+from tf2_geometry_msgs import PointStamped, PoseStamped
+import tf2_ros 
 from climbing_robot.msg import Path
 import numpy as np
 from aStar import Star
 
-			   #Quaternions                                                           	    Euler Angles (roll,pitch,yaw) (degrees)
-QUATERNIONS = [QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,0,1)), 						#(0,0,0)			
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,0.382,0.924)),				#(0,0,45)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,0.707,0.707)),				#(0,0,90)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,0.924,0.382)),				#(0,0,135)	
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,1,0)),						#(0,0,180)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,-0.924,0.382)),				#(0,0,-135)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,-0.707,0.707)),				#(0,0,-90)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0,-0.382,0.924)),				#(0,0,-45)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0,0.382,0,0.924)),				#(0,45,0)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0.271,0.271,0.653,0.653)),		#(0,45,90)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(0.382,0,0.924,0)),				#(0,45,180)
-			   QuaternionStamped(Header('camera_odom_frame'),Quaternion(-0.271,0.271,-0.635,0.635))]	#(0,45,-90)
+											  # Euler Angles (roll,pitch,yaw) (degrees)
+QUATERNIONS = [Quaternion(0,0,0,1), 						#(0,0,0)			
+			   Quaternion(0,0,0.382,0.924),					#(0,0,45)
+			   Quaternion(0,0,0.707,0.707),					#(0,0,90)
+			   Quaternion(0,0,0.924,0.382),					#(0,0,135)	
+			   Quaternion(0,0,1,0),							#(0,0,180)
+			   Quaternion(0,0,-0.924,0.382),				#(0,0,-135)
+			   Quaternion(0,0,-0.707,0.707),				#(0,0,-90)
+			   Quaternion(0,0,-0.382,0.924),				#(0,0,-45)
+
+			   Quaternion(0,-0.382,0,0.924),
+			   Quaternion(-0.271,-0.271,0.653,0.653),
+			   Quaternion(-0.382,0,0.924,0),
+			   Quaternion(0.271,-0.271,-0.653,0),
+			   Quaternion(0,0.382,0,0.924),					#(0,45,0)
+			   Quaternion(0.271,0.271,0.653,0.653),			#(0,45,90)
+			   Quaternion(0.382,0,0.924,0),					#(0,45,180)
+			   Quaternion(-0.271,0.271,-0.635,0.635),		#(0,45,-90)
+			   
+			   Quaternion(0,0.707,0,0.707)]		
 
 class Surface:
 	def __init__(self, id, xMin=0, xMax=0, yMin=0, yMax=0, zMin=0, zMax=0, xDim=0, yDim=0):
@@ -32,12 +39,14 @@ class Surface:
 		self.yMax = yMax
 		self.zMin = zMin
 		self.zMax = zMax
+		self.xDim = xDim
+		self.yDim = yDim
 	
-	def getFrame(self, frame_id, frame_rotation):
+	def getFrame(self, frame_rotation):
 		frame = TransformStamped()
 		frame.header.stamp = rospy.Time.now()
-		frame.header.frame_id = 'camera_odom_frame'
-		frame.child_frame_id = frame_id
+		frame.header.frame_id = 'robot_odom_frame'
+		frame.child_frame_id = self.id
 		frame.transform.translation = Vector3(self.xMin, self.yMin, self.zMin)
 		frame.transform.rotation = frame_rotation
 		return frame
@@ -46,11 +55,13 @@ class Surface:
 		return self.id
 
 class Vertice:
-	def __init__(self, pos, surface):
+	def __init__(self, frame_pos, surface):
 		self.id = ''
-		self.pos = pos
+		self.frame_pos = frame_pos
 		self.surface = surface
 		self.edge = False
+		self.ground = False
+		self.pos = PointStamped()
 
 	def __str__(self):
 		return "({0}, {1})".format(self.pos, self.surface)
@@ -62,41 +73,63 @@ class Edge:
 		self.distance = distance
 		self.rotation = rotation
 
-def getEdge(source,target,dist):
-	tfBuffer = tf2_ros.Buffer()
-	listener = tf2_ros.TransformListener(tfBuffer)
-	source_frame = str("%s_%s" %(source.surface.id, 'frame'))
-	target_frame = str("%s_%s" %(target.surface.id, 'frame'))
-	source_pos = tfBuffer.transform(source.pos, source_frame, rospy.Duration(10))
-	target_pos = tfBuffer.transform(target.pos, target_frame, rospy.Duration(10))
-	q = Quaternion()
-	if source_frame == target_frame:
-		if source_pos.point.x > target_pos.point.x and source.pos_point.y == target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[0], source_frame, rospy.Duration(10))
-		elif source_pos.point.x > target_pos.point.x and source.pos_point.y > target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[1], source_frame, rospy.Duration(10))
-		elif source_pos.point.x == target_pos.point.x and source.pos_point.y > target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[2], source_frame, rospy.Duration(10))
-		elif source_pos.point.x < target_pos.point.x and source.pos_point.y > target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[3], source_frame, rospy.Duration(10))
-		elif source_pos.point.x < target_pos.point.x and source.pos_point.y == target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[4], source_frame, rospy.Duration(10))
-		elif source_pos.point.x > target_pos.point.x and source.pos_point.y < target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[5], source_frame, rospy.Duration(10))
-		elif source_pos.point.x == target_pos.point.x and source.pos_point.y < target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[6], source_frame, rospy.Duration(10))
-		elif source_pos.point.x > target_pos.point.x and source.pos_point.y < target_pos.point.y:
-			q = tfBuffer.transform(QUATERNIONS[7], source_frame, rospy.Duration(10))
-	else:
-		if source_pos.point.x == source.surface.xDim:
-			q = tfBuffer.transform(QUATERNIONS[8], source_frame, rospy.Duration(10))
-		elif source_pos.point.y == source.surface.yDim:
-			q = tfBuffer.transform(QUATERNIONS[9], source_frame, rospy.Duration(10))
-		elif source_pos.point.x == 0:
-			q = tfBuffer.transform(QUATERNIONS[10], source_frame, rospy.Duration(10))
+def getEdge(source,target,dist,tfBuffer):
+	source_frame = source.surface.id
+	target_frame = target.surface.id
+	source_pos = source.frame_pos
+	target_pos = target.frame_pos
+	if target_frame != source_frame:
+		target_pos = tfBuffer.transform(target_pos, source_frame, rospy.Duration(10))
+		if np.linalg.norm(source_pos.point.x - target_pos.point.x) < 0.1:
+			target_pos.point.x = source_pos.point.x
+		if np.linalg.norm(source_pos.point.y - target_pos.point.y) < 0.1:
+			target_pos.point.y = source_pos.point.y
+
+	q = PoseStamped()
+	q.header.frame_id = source_frame
+	if source.edge and source.pos.point.z == 0:
+		q.pose = Pose(source_pos.point,QUATERNIONS[12])
+	elif source.edge and source_frame == target_frame:
+		if source_pos.point.x == 0:
+			q.pose = Pose(source_pos.point,QUATERNIONS[8])
 		elif source_pos.point.y == 0:
-			q = tfBuffer.transform(QUATERNIONS[11], source_frame, rospy.Duration(10))
-	return Edge(source,target,dist,q)
+			q.pose = Pose(source_pos.point,QUATERNIONS[9])
+		elif source_pos.point.x == source.surface.xDim:
+			q.pose = Pose(source_pos.point,QUATERNIONS[10])
+		elif source_pos.point.y == source.surface.yDim:
+			q.pose = Pose(source_pos.point,QUATERNIONS[11])
+	elif source.edge and source_frame != target_frame:
+		if source_pos.point.x == 0:
+			q.pose = Pose(source_pos.point,QUATERNIONS[12])
+		elif source_pos.point.y == 0:
+			q.pose = Pose(source_pos.point,QUATERNIONS[13])
+		elif source_pos.point.x == source.surface.xDim:
+			q.pose = Pose(source_pos.point,QUATERNIONS[14])
+		elif source_pos.point.y == source.surface.yDim:
+			q.pose = Pose(source_pos.point,QUATERNIONS[15])
+	else:
+		if source_pos.point.x < target_pos.point.x and source_pos.point.y == target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[0])
+		elif source_pos.point.x > target_pos.point.x and source_pos.point.y < target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[1])
+		elif source_pos.point.x == target_pos.point.x and source_pos.point.y < target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[2])
+		elif source_pos.point.x > target_pos.point.x and source_pos.point.y < target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[3])
+		elif source_pos.point.x > target_pos.point.x and source_pos.point.y == target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[4])
+		elif source_pos.point.x > target_pos.point.x and source_pos.point.y > target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[5])
+		elif source_pos.point.x == target_pos.point.x and source_pos.point.y > target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[6])
+		elif source_pos.point.x < target_pos.point.x and source_pos.point.y > target_pos.point.y:
+			q.pose = Pose(source_pos.point,QUATERNIONS[7])
+		elif source.ground:
+			q.pose = Pose(source_pos.point,QUATERNIONS[16])
+
+	q = tfBuffer.transform(q, 'robot_odom_frame', rospy.Duration(10))
+
+	return Edge(source,target,dist,q.pose.orientation)
 
 def pathModel():
 	xDim = 0.381
@@ -109,7 +142,7 @@ def pathModel():
 	rospy.init_node('model')
 	vis_puba = rospy.Publisher("visualization_marker_array", MarkerArray, queue_size=10)
 	vis_pub = rospy.Publisher("visualization_marker", Marker, queue_size=10)
-	path_pub = rospy.Publisher("generated_path", PoseArray, queue_size=10)
+	path_pub = rospy.Publisher("generated_path", Path, queue_size=10)
 	broadcaster = tf2_ros.StaticTransformBroadcaster()
 	
 	rate = rospy.Rate(10)
@@ -119,11 +152,10 @@ def pathModel():
 	surfaceC = Surface('surfaceC', (xOffset + xDim), (xOffset + xDim), (yOffset + yDim), yOffset, zOffset, (zOffset + zDim), zDim, yDim)
 	surfaceD = Surface('surfaceD', (xOffset + xDim), xOffset, yOffset, yOffset, zOffset, (zOffset + zDim), zDim, xDim)
 	surfaceF = Surface('surfaceF', 0, 5, 0, 5, 0, 5)
-	broadcaster.sendTransform([surfaceA.getFrame('surfaceA_frame', Quaternion(0,0,0,1)), 
-							   surfaceB.getFrame('surfaceB_frame', Quaternion(0, -0.707, 0, 0.707)),
-							   surfaceC.getFrame('surfaceC_frame', Quaternion(0.707, 0, 0.707, 0)),
-							   surfaceD.getFrame('surfaceD_frame', Quaternion(0.5, -0.5, 0.5, 0.5)),
-							   surfaceF.getFrame('surfaceF_frame', Quaternion(0,0,0,1))])
+	broadcaster.sendTransform([surfaceA.getFrame(Quaternion(0,0,0,1)), 
+							   surfaceB.getFrame(Quaternion(0, -0.707, 0, 0.707)),
+							   surfaceC.getFrame(Quaternion(0.707, 0, 0.707, 0)),
+							   surfaceD.getFrame(Quaternion(0.5, -0.5, 0.5, 0.5))])
 	
 	
 	surfaces = {}
@@ -136,7 +168,7 @@ def pathModel():
 	id = 0
 	#====Build Structure Model===
 	surface=Marker()
-	surface.header.frame_id = "camera_odom_frame"
+	surface.header.frame_id = "robot_odom_frame"
 	surface.header.stamp = rospy.get_rostime()
 	surface.ns = "Namespace"
 	surface.id = id
@@ -166,15 +198,15 @@ def pathModel():
 	for i in range(row+1):
 		for j in range(col):
 			p = Vertice(PointStamped(),surfaceA)
-			p.pos.header.frame_id = 'surfaceA_frame'
-			p.pos.header.stamp = rospy.Time(0)
+			p.frame_pos.header.frame_id = 'surfaceA'
+			p.frame_pos.header.stamp = rospy.Time(0)
 			p.id = "%s_%d_%d" %('surfaceA', i, j)
-			p.pos.point.x = (xDim/row) * (i)
-			p.pos.point.y = (yDim/col) * (j)
-			p.pos.point.z = 0
-			if (p.pos.point.x == xDim or p.pos.point.x == 0) and not (p.pos.point.y == yDim or p.pos.point.y == 0):
+			p.frame_pos.point.x = (xDim/row) * (i)
+			p.frame_pos.point.y = (yDim/col) * (j)
+			p.frame_pos.point.z = 0
+			if (p.frame_pos.point.x == xDim or p.frame_pos.point.x == 0) and not (p.frame_pos.point.y == yDim or p.frame_pos.point.y == 0):
 				p.edge = True
-			elif (p.pos.point.y == yDim or p.pos.point.y == 0) and not (p.pos.point.x == xDim or p.pos.point.x == 0):
+			elif (p.frame_pos.point.y == yDim or p.frame_pos.point.y == 0) and not (p.frame_pos.point.x == xDim or p.frame_pos.point.x == 0):
 				p.edge = True
 			if not ((i == row and j == col) or (i == 0 and j == col) or (i == row and j ==0) or (i == 0 and j == 0)):
 				points.append(p)
@@ -183,74 +215,77 @@ def pathModel():
 	for i in range(row):
 		for j in range(1,col):
 			p = Vertice(PointStamped(),surfaceB)
-			p.pos.header.frame_id = 'surfaceB_frame'
-			p.pos.header.stamp = rospy.Time(0)
+			p.frame_pos.header.frame_id = 'surfaceB'
+			p.frame_pos.header.stamp = rospy.Time(0)
 			p.id = "%s_%d_%d" %('surfaceB', i, j)
-			p.pos.point.x = (zDim/row) * (i)
-			p.pos.point.y = (yDim/col) * (j)
-			p.pos.point.z = 0
-			if (p.pos.point.x == xDim or p.pos.point.x == 0) != (p.pos.point.y == yDim or p.pos.point.y == 0):
+			p.frame_pos.point.x = (zDim/row) * (i)
+			p.frame_pos.point.y = (yDim/col) * (j)
+			p.frame_pos.point.z = 0
+			if (p.frame_pos.point.x == xDim or p.frame_pos.point.x == 0) != (p.frame_pos.point.y == yDim or p.frame_pos.point.y == 0):
 				p.edge = True
 			if not ((i == row and j == col) or (i == 0 and j == col) or (i == row and j ==0) or (i == 0 and j == 0)):
 				points.append(p)
 
 			if i == 0 and not (j == 0 or j == col):
-				gp = Vertice(PointStamped(),surfaceF)
-				gp.pos.header.frame_id = 'surfaceB_frame'
-				gp.pos.header.stamp = rospy.Time(0)
+				gp = Vertice(PointStamped(),surfaceB)
+				gp.frame_pos.header.frame_id = 'surfaceB'
+				gp.frame_pos.header.stamp = rospy.Time(0)
 				gp.id = "%s_%d_%d" %('surfaceBF', i, j)
-				gp.pos.point.x = 0
-				gp.pos.point.y = (yDim/col) * (j)
-				gp.pos.point.z = (zDim/row)
+				gp.ground = True
+				gp.frame_pos.point.x = 0
+				gp.frame_pos.point.y = (yDim/col) * (j)
+				gp.frame_pos.point.z = (zDim/row)
 				points.append(gp)
 
 	for i in range(row):
 		for j in range(1,col):
 			p = Vertice(PointStamped(),surfaceC)
-			p.pos.header.frame_id = 'surfaceC_frame'
-			p.pos.header.stamp = rospy.Time(0)
+			p.frame_pos.header.frame_id = 'surfaceC'
+			p.frame_pos.header.stamp = rospy.Time(0)
 			p.id = "%s_%d_%d" %('surfaceC', i, j)
-			p.pos.point.x = (zDim/row) * (i)
-			p.pos.point.y = (yDim/col) * (j)
-			p.pos.point.z = 0
-			if (p.pos.point.x == xDim or p.pos.point.x == 0) != (p.pos.point.y == yDim or p.pos.point.y == 0):
+			p.frame_pos.point.x = (zDim/row) * (i)
+			p.frame_pos.point.y = (yDim/col) * (j)
+			p.frame_pos.point.z = 0
+			if (p.frame_pos.point.x == xDim or p.frame_pos.point.x == 0) != (p.frame_pos.point.y == yDim or p.frame_pos.point.y == 0):
 				p.edge = True
 			if not ((i == row and j == col) or (i == 0 and j == col) or (i == row and j ==0) or (i == 0 and j == 0)):
 				points.append(p)
 
 			if i == 0 and not (j == 0 or j == col):
-				gp = Vertice(PointStamped(),surfaceF)
-				gp.pos.header.frame_id = 'surfaceC_frame'
-				gp.pos.header.stamp = rospy.Time(0)
+				gp = Vertice(PointStamped(),surfaceC)
+				gp.frame_pos.header.frame_id = 'surfaceC'
+				gp.frame_pos.header.stamp = rospy.Time(0)
 				gp.id = "%s_%d_%d" %('surfaceCF', i, j)
-				gp.pos.point.x = 0
-				gp.pos.point.y = (yDim/col) * (j)
-				gp.pos.point.z = (zDim/row)
+				gp.ground = True
+				gp.frame_pos.point.x = 0
+				gp.frame_pos.point.y = (yDim/col) * (j)
+				gp.frame_pos.point.z = (zDim/row)
 				points.append(gp)
 
 	row,col = (6, 2)
 	for i in range(row+1):
 		for j in range(col+1):
 			p = Vertice(PointStamped(),surfaceD)
-			p.pos.header.frame_id = 'surfaceD_frame'
-			p.pos.header.stamp = rospy.Time(0)
+			p.frame_pos.header.frame_id = 'surfaceD'
+			p.frame_pos.header.stamp = rospy.Time(0)
 			p.id = "%s_%d_%d" %('surfaceD', i, j)
-			p.pos.point.x = (zDim/row) * (i)
-			p.pos.point.y = (xDim/col) * (j)
-			p.pos.point.z = 0
-			if (p.pos.point.x == zDim or p.pos.point.x == 0) != (p.pos.point.y == xDim or p.pos.point.y == 0):
+			p.frame_pos.point.x = (zDim/row) * (i)
+			p.frame_pos.point.y = (xDim/col) * (j)
+			p.frame_pos.point.z = 0
+			if (p.frame_pos.point.x == zDim or p.frame_pos.point.x == 0) != (p.frame_pos.point.y == xDim or p.frame_pos.point.y == 0):
 				p.edge = True
 			if not ((i == row and j == col) or (i == 0 and j == col) or (i == row and j ==0) or (i == 0 and j == 0)):
 				points.append(p)
 
 			if i == 0 and not (j == 0 or j == col):
-				gp = Vertice(PointStamped(),surfaceF)
-				gp.pos.header.frame_id = 'surfaceD_frame'
-				gp.pos.header.stamp = rospy.Time(0)
+				gp = Vertice(PointStamped(),surfaceD)
+				gp.frame_pos.header.frame_id = 'surfaceD'
+				gp.frame_pos.header.stamp = rospy.Time(0)
 				gp.id = "%s_%d_%d" %('surfaceDF', i, j)
-				gp.pos.point.x = 0
-				gp.pos.point.y = (xDim/col) * (j)
-				gp.pos.point.z = (zDim/row)
+				gp.ground = True
+				gp.frame_pos.point.x = 0
+				gp.frame_pos.point.y = (xDim/col) * (j)
+				gp.frame_pos.point.z = (zDim/row)
 				points.append(gp)
 		
 	#create graph	
@@ -259,9 +294,9 @@ def pathModel():
 	verticeGraph = {}
 
 	for p in points:
-		p.pos = tfBuffer.transform(p.pos, 'camera_odom_frame', rospy.Duration(10))
+		p.pos = tfBuffer.transform(p.frame_pos, 'robot_odom_frame', rospy.Duration(10))
 		vertice = Marker()
-		vertice.header.frame_id = "camera_odom_frame"
+		vertice.header.frame_id = "robot_odom_frame"
 		vertice.header.stamp = rospy.get_rostime()
 		vertice.type = vertice.SPHERE
 		vertice.action = vertice.ADD
@@ -290,20 +325,21 @@ def pathModel():
 		vert=j.id
 		edges = []
 		for k in points:
-			
 			a = np.array((j.pos.point.x, j.pos.point.y, j.pos.point.z))
 			b = np.array((k.pos.point.x, k.pos.point.y, k.pos.point.z))
 			dist = np.linalg.norm(a-b)
-			if (not (j.edge and k.edge) and ((dist < 0.33 and not j.pos == k.pos and j.surface == k.surface and j.surface != surfaceF and k.surface != surfaceF and not (j.edge or k.edge)) or 
-			   (dist < 0.245 and j.edge != k.edge and j.surface != k.surface and (j.surface in surfaces[str(k.surface)])) or
-			   (dist < 0.245 and j.edge != k.edge and j.surface == k.surface))):
-				edge = getEdge(j,k,dist)
+			if (not (j.edge and k.edge) and not(j.ground and k.ground) and ((dist < 0.33 and not j.pos == k.pos and j.surface == k.surface and not (j.edge or k.edge or j.ground or k.ground)) or 
+			   (dist < 0.245 and j.ground != k.ground and j.surface == k.surface) or
+			   (dist < 0.245 and j.edge != k.edge and j.surface == k.surface) or
+			   (dist < 0.245 and j.edge != k.edge and j.surface != k.surface and (j.surface in surfaces[k.surface.id])))):
+				edge = getEdge(j,k,dist,tfBuffer)
 				edges.append(edge)
+
 		verticeGraph[vert] = edges
 
 	#plot graph edges		
 	line = Marker()
-	line.header.frame_id = "camera_odom_frame"
+	line.header.frame_id = "robot_odom_frame"
 	line.header.stamp = rospy.get_rostime()
 	line.type = vertice.LINE_LIST
 	line.action = vertice.ADD
@@ -323,7 +359,7 @@ def pathModel():
 			line.points.append(nxtvert.target.pos.point)
 			line.points.append(nxtvert.source.pos.point)
 
-	current_pose = tfBuffer.lookup_transform('camera_odom_frame', 'camera_pose_frame', rospy.Time())
+	current_pose = tfBuffer.lookup_transform('robot_odom_frame', 'robot_pose_frame', rospy.Time())
 
 	findPath = Star()
 	start = Vertice(PointStamped(), surfaceF)
@@ -360,19 +396,15 @@ def pathModel():
 		if nodeD < targetNodeD and node.target.surface == start.surface:
 			targetNode = node.target
 	
-	edge = Edge(start,minS,mindS,Quaternion())
-	verticeGraph[start.id] = [edge]
-	edge = Edge(minS, start, mindS, Quaternion())
-	verticeGraph[minS.id].append(edge)
-	edge = Edge(end,minE,mindE,Quaternion())
-	verticeGraph[end.id] = [edge]
-	edge = Edge(minE, end, mindE, Quaternion())
-	verticeGraph[minE.id].append(edge)
 
-	pathNodes, pathEdges = findPath.aStar(verticeGraph, start.id, end.id)
+
+	sEdge = Edge(start,minS,mindS,current_pose.transform.rotation)
+	verticeGraph[start.id] = [sEdge]
+	
+	pathNodes, pathEdges = findPath.aStar(verticeGraph, start.id, targetNode.id)
 	
 	path = Marker()
-	path.header.frame_id = "camera_odom_frame"
+	path.header.frame_id = "robot_odom_frame"
 	path.header.stamp = rospy.get_rostime()
 	path.type = vertice.LINE_LIST
 	path.action = vertice.ADD
@@ -388,20 +420,32 @@ def pathModel():
 	path.color.b = 0
 	path.color.a = 1
 
-	path.points.append(end.pos.point)
-	path.points.append(targetNode.pos.point)
+	pathPoints = Path()
+	for i in range(1,len(pathNodes)):
+		path.points.append(pathEdges[pathNodes[i]].source.pos.point)
+		path.points.append(pathEdges[pathNodes[i]].target.pos.point)
+		if i != 1:
+			t = TransformStamped()
+			t.transform = Transform(pathEdges[pathNodes[i]].source.pos.point, pathEdges[pathNodes[i]].rotation)
+			t.header.frame_id = 'robot_odom_frame'
+			pathPoints.path.append(t)
 
-	pathPoints = PoseArray()
-	pathPoints.poses.append(Pose(targetNode.pos, Quaternion()))
-	for i in range(len(pathNodes)-1):
-		path.points.append(pathEdges[pathNodes[i]][0].pos.point)
-		path.points.append(pathEdges[pathNodes[i]][1].pos.point)
-		print(pathNodes[i])
-		# pathPoints.poses.append(Pose(pathEdges[pathNodes[i]][1].pos, Quaternion()))
-	path.points.append(pathEdges[pathNodes[0]][0].pos.point)
+	ed = endA - targetNodeA
+	eRot = np.arctan2(ed[1],ed[0])
+	ez = np.sin(eRot/2)
+	ew = np.cos(eRot/2)
+	e = PoseStamped()
+	e.pose = Pose(end.pos.point, Quaternion(0,0,ez,ew))
+	e.header.frame_id = targetNode.surface.id
+	e = tfBuffer.transform(e, 'robot_odom_frame', rospy.Duration(10))
+	et = TransformStamped()
+	et.transform.translation = end.pos.point
+	et.transform.rotation = e.pose.orientation
+	et.header.frame_id = 'robot_odom_frame'
+	et.child_frame_id = 'end'
+	pathPoints.path.append(et)
 	path.points.append(targetNode.pos.point)
-	# pathPoints.poses.append(Pose(pathEdges[pathNodes[0]][0].pos, Quaternion()))
-	# pathPoints.poses.append(Pose(end, Quaternion()))
+	path.points.append(end.pos.point)
 		
 	#publish markers
 	while not rospy.is_shutdown():
@@ -409,7 +453,7 @@ def pathModel():
 		vis_puba.publish(verticeArray)
 		vis_pub.publish(line)
 		vis_pub.publish(path)
-		# path_pub.publish(pathPoints)
+		path_pub.publish(pathPoints)
 		rate.sleep()
 
 if __name__ == '__main__':

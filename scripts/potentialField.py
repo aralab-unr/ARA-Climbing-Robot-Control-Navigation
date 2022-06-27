@@ -3,13 +3,13 @@ import rospy
 import os
 import tf2_ros
 from geometry_msgs.msg import Transform, TransformStamped, Pose, Quaternion, Vector3
+from climbing_robot.msg import Path
 import tf
 import numpy as np
 import std_msgs.msg
 from sys import exit
 
-def potentialField():
-    rospy.init_node('Controller')
+def potentialField(msg):
     tfBuffer = tf2_ros.Buffer()
     listener = tf2_ros.TransformListener(tfBuffer)
     rate = rospy.Rate(10)
@@ -24,35 +24,29 @@ def potentialField():
     wheel_rotation_max = np.pi / 3                     # set maximum turning angle
 
     i = 0
-    # targets = [Transform(Vector3(0.4,0,0),Quaternion(0,0,0,1)), 
-    #            Transform(Vector3(0.5,0,-0.5),Quaternion(0,0.7071,0,0.7071))] 
-            #    Transform(Vector3(0.5,0.5,-0.5),Quaternion(0.5,0.5,0.5,0.5))]
-    targets = [Transform(Vector3(0.5,0,-0.5),Quaternion(0,0.7071,0,0.7071))]
-# targets = [np.array([0.5, 0.0, 0.0]), np.array([0.5, 0.0, 0.5]), np.array([0.0, 0.0, 0.5]), np.array([0.0, 0.0, 0.0])]
-# targets = [np.array([0.5, 0.0, 0.0]), np.array([0.5, -0.5, 0.0]), np.array([0.0, -0.5, 0]), np.array([0.0, 0.0, 0.0])]
-
+    end = False
     
-    while not rospy.is_shutdown():
-        qv = targets[i]
+    while not end:
+        qv = waypoint = msg.path[i]
 
         broadcaster = tf2_ros.StaticTransformBroadcaster()  
-        waypoint = TransformStamped()
-        
-        waypoint.header.stamp = rospy.Time.now()
-        waypoint.header.frame_id = 'camera_odom_frame'
         waypoint.child_frame_id = 'waypoint'
+        # waypoint = TransformStamped()
+        
+        # waypoint.header.stamp = rospy.Time.now()
+        # waypoint.header.frame_id = 'camera_odom_frame'
+        
 
-        waypoint.transform.translation = qv.translation
-        waypoint.transform.rotation = qv.rotation
+        # waypoint.transform.translation = qv.translation
+        # waypoint.transform.rotation = qv.rotation
         broadcaster.sendTransform(waypoint)
 
         try:
-            trans = tfBuffer.lookup_transform('waypoint', 'camera_pose_frame', rospy.Time())
+            trans = tfBuffer.lookup_transform('waypoint', 'robot_pose_frame', rospy.Time())
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
             rate.sleep()
             continue
         
-        end = False
         dist = np.linalg.norm([trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z])
         roll, pitch, yaw = tf.transformations.euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])
     
@@ -86,7 +80,7 @@ def potentialField():
 
         os.system('clear')
         print("=====================================")
-        print("waypoint pos:", qv.translation.x, qv.translation.y, qv.translation.z)
+        print("waypoint pos:", waypoint.transform.translation.x, waypoint.transform.translation.y, waypoint.transform.translation.z)
         print("distance from waypoint (xyz):", trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z)
         print("distance from waypoint (norm):", dist)
         print("velocity:", vr)
@@ -99,11 +93,14 @@ def potentialField():
         controller.data = [fs,bs,fw,bw]
         pub.publish(controller)
 
-        if end:
-            exit()
         rate.sleep()
 
+def idle():
+    rospy.init_node('Controller')
+    while not rospy.is_shutdown():
+        rospy.Subscriber('generated_path', Path, potentialField)
+        rospy.spin
 if __name__ == '__main__':
     try:
-        potentialField()
+        idle()
     except rospy.ROSInterruptException: pass

@@ -1,0 +1,1 @@
+rosrun rviz rviz -d /home/aralab/catkin_ws/src/climbing_robot/launch/climbing_robot.rviz 
