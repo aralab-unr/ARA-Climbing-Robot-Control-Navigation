@@ -11,9 +11,13 @@ To replicate and run our software, you must have ROS installed http://wiki.ros.o
 
 
 
-
-
-
-
-
 Hardware
+The CR we are using has a bicycle-like frame which allows for a tighter turning radius. The CR used in the testing has been rebuilt with new parts except for one wheel. Brandon Moore engineered the new parts from a former design engineered by Son Nguyen. A new design is implemented due to technical issues like the wheel housing breaking. Another reason for a new design was the Panda Latte melted its pins, and a raspberry pie replaced the onboard computer. Due to the raspberry pie being slightly larger than the Panda Latte and the battery being transitioned into a power bank, the upper housing platform needed to be modified to accompany these new design features.  
+
+The magnetic wheels needed to be switched out for smaller wheels at first because they burnt the motor out. Unfortunately, as the project progressed, the smaller wheels did not have enough magnetic force to handle the transfer from one surface to another surface. One solution for the wheels not climbing was to give them treads; this seemed to give them traction, which helped but did not solve the solution. The next option was to put the larger wheels back on the bot to allow a more potent magnetic force.
+
+Warning neodymium magnets are strong and can hurt you if they are not respected. Magnetic wheels need to be handled with care and due diligence. While working on the robot and changing the wheels, standard metal tools may become the enemy and inflict pain. Caution should be used when handling these wheels. 
+
+
+Mapping
+
