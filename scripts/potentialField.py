@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 import rospy
 import os
 import tf2_ros
@@ -7,52 +7,49 @@ from climbing_robot.msg import Path
 import tf
 import numpy as np
 import std_msgs.msg
-from sys import exit
 
 def potentialField(msg):
     tfBuffer = tf2_ros.Buffer()
     listener = tf2_ros.TransformListener(tfBuffer)
     rate = rospy.Rate(10)
 
+    # Publisher to topic arduino is listening to
+    # controller.data format:[front wheel steering, back wheel steering, front wheel rotation, back wheel rotation]
     pub = rospy.Publisher('wheelAndSteer', std_msgs.msg.Float32MultiArray, queue_size=1)
     controller = std_msgs.msg.Float32MultiArray()
-    controller.data = [1500,1500,1600,1600]
+    controller.data = [1500,1500,1600,1600]         # set all to 0
     pub.publish(controller)
 
-    vr_max = 0.25# vr_max = 0.1267                         # set maximum of robot velocity 
+    vr_max = 0.25                               # set maximum of robot velocity (m/s)
     vr = 0
-    wheel_rotation_max = np.pi / 3                     # set maximum turning angle
+    wheel_rotation_max = np.pi / 3              # set maximum wheel rotation angle (rad)
+    reached = 0.1                              # set radius to reach waypoint
 
-    i = 0
+    i = 0                                       # initialize waypoint iterator
     end = False
     
     while not end:
-        qv = waypoint = msg.path[i]
+        connecting = True
+        trans = TransformStamped()
+        while connecting:       # get transformation between robot frame and waypoint frame (1 : len(msg.path))
+            try:
+                # trans = tfBuffer.lookup_transform('robot_pose_frame', str(i+1), rospy.Time())
+                trans = tfBuffer.lookup_transform('robot_pose_frame', str(i+1), rospy.Time())
+                connecting = False
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                continue
 
-        broadcaster = tf2_ros.StaticTransformBroadcaster()  
-        waypoint.child_frame_id = 'waypoint'
-        # waypoint = TransformStamped()
-        
-        # waypoint.header.stamp = rospy.Time.now()
-        # waypoint.header.frame_id = 'camera_odom_frame'
-        
-
-        # waypoint.transform.translation = qv.translation
-        # waypoint.transform.rotation = qv.rotation
-        broadcaster.sendTransform(waypoint)
-
-        try:
-            trans = tfBuffer.lookup_transform('waypoint', 'robot_pose_frame', rospy.Time())
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            rate.sleep()
-            continue
-        
+        # Find normal distance between robot and waypoint
         dist = np.linalg.norm([trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z])
+        # Convert quaternion to euler
         roll, pitch, yaw = tf.transformations.euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])
-    
-        v_rd = np.sqrt(np.square(trans.transform.translation.x))
+
+        # set velocity controller of robot
+        v_rd = dist
+        # limit max velocity
         v_rd = np.minimum(v_rd,vr_max)
 
+        # limit acceleration of robot
         if vr < v_rd:
             vr += 0.005
             if vr > v_rd:
@@ -61,33 +58,41 @@ def potentialField(msg):
             vr -= 0.005
             if vr < v_rd:
                 vr = v_rd
+
+        # limit maximum rotation (correcting for +/- angles)
         if yaw > 0:
             wheel_rotation = np.minimum(yaw, wheel_rotation_max)
         elif yaw < 0:
             wheel_rotation = np.maximum(yaw, -wheel_rotation_max)
 
-        if(dist < 0.05):
+        # Iterate to next waypoint if within reach radius of waypoint
+        if(dist < reached):
             i += 1
-            if qv.translation == targets[len(targets)-1].translation:
+            # If reached final waypoint, set controls to 0 and end loop
+            if msg.path[i].transform.translation == msg.path[len(msg.path)-1].transform.translation:
                 vr = 0
                 wheel_rotation = 0
                 end = True
 
+        # convert control values to servo value range 
+            # Steering 1500 = 0, 900 - 2100
+            # Wheel rotation 1600 = 0, 800 - 2400
         fs = int(1500 - wheel_rotation / wheel_rotation_max * 600)
         bs = int(1500 + wheel_rotation / wheel_rotation_max * 600)
-        fw = int(1600 + vr / vr_max * 800)
-        bw = int(1600 - vr / vr_max * 800)
+        fw = int(1600 + vr / vr_max * 400)
+        bw = int(1600 - vr / vr_max * 400)
 
         os.system('clear')
         print("=====================================")
-        print("waypoint pos:", waypoint.transform.translation.x, waypoint.transform.translation.y, waypoint.transform.translation.z)
-        print("distance from waypoint (xyz):", trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z)
+        print("Waypoint: ", msg.path[i].child_frame_id)
+        print("waypoint pos:", msg.path[i].transform.translation.x, msg.path[i].transform.translation.y, msg.path[i].transform.translation.z)
+        # print("distance from waypoint (xyz):", trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z)
         print("distance from waypoint (norm):", dist)
-        print("velocity:", vr)
-        print("rotation towards waypoint (Euler): %f %f %f" %(roll, pitch, yaw))
+        # print("velocity:", vr)
+        # print("rotation towards waypoint (Euler): %f %f %f" %(roll, pitch, yaw))
         print("turning angle:", wheel_rotation)
-        print("wheel steering input:", fs, bs)
-        print("wheel motor input:", fw, bw)
+        # print("wheel steering input:", fs, bs)
+        # print("wheel motor input:", fw, bw)
         print("=====================================")
 
         controller.data = [fs,bs,fw,bw]
@@ -100,6 +105,7 @@ def idle():
     while not rospy.is_shutdown():
         rospy.Subscriber('generated_path', Path, potentialField)
         rospy.spin
+        
 if __name__ == '__main__':
     try:
         idle()

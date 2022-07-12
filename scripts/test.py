@@ -10,8 +10,8 @@ def test():
 
     controller.data.append(1500)
     controller.data.append(1500)
-    controller.data.append(1600)
-    controller.data.append(1600)
+    controller.data.append(1650)
+    controller.data.append(1550)
     pub.publish(controller)
 
 if __name__ == '__main__':

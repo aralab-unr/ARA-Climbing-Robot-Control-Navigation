@@ -1,14 +1,11 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 from geometry_msgs.msg import Point
 # Class for aStar
 class Star:
 
-    # I think we would add in a z1 and a z2
     def hValue(self, cell, goalNode):
         p1 = cell[0]
         p2 = goalNode[0]
-        #print(p1[0])
-        #print(p2[0])
     
         # eucledian distance
         distance = ((p2.source.pos.point.x-p1.source.pos.point.x)**2 + (p2.source.pos.point.y-p1.source.pos.point.y)**2 + (p2.source.pos.point.z-p1.source.pos.point.z)**2)
