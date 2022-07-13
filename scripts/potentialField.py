@@ -3,6 +3,7 @@ import rospy
 import os
 import tf2_ros
 from geometry_msgs.msg import Transform, TransformStamped, Pose, Quaternion, Vector3
+from dynamic_reconfigure.msg import BoolParameter
 from climbing_robot.msg import Path
 import tf
 import numpy as np
@@ -16,9 +17,11 @@ def potentialField(msg):
     # Publisher to topic arduino is listening to
     # controller.data format:[front wheel steering, back wheel steering, front wheel rotation, back wheel rotation]
     pub = rospy.Publisher('wheelAndSteer', std_msgs.msg.Float32MultiArray, queue_size=1)
+    reachPub = rospy.Publisher('Reach',bool,queue_size=10)
     controller = std_msgs.msg.Float32MultiArray()
     controller.data = [1500,1500,1600,1600]         # set all to 0
     pub.publish(controller)
+    reachPub.publish(False)
 
     vr_max = 0.25                               # set maximum of robot velocity (m/s)
     vr = 0
@@ -28,7 +31,7 @@ def potentialField(msg):
     i = 0                                       # initialize waypoint iterator
     end = False
     
-    while not end:
+    while not end.value:
         connecting = True
         trans = TransformStamped()
         while connecting:       # get transformation between robot frame and waypoint frame (1 : len(msg.path))
@@ -72,7 +75,9 @@ def potentialField(msg):
             if msg.path[i].transform.translation == msg.path[len(msg.path)-1].transform.translation:
                 vr = 0
                 wheel_rotation = 0
-                end = True
+                end = BoolParameter()
+                end.value = True
+                reachPub.publish(end)
 
         # convert control values to servo value range 
             # Steering 1500 = 0, 900 - 2100
