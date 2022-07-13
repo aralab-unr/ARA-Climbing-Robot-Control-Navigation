@@ -7,7 +7,7 @@ from nav_msgs.msg import Odometry
 def broadcast():
     
     broadcaster = tf2_ros.StaticTransformBroadcaster()
-
+    rospy.wait_for_message('/camera/odom/sample', Odometry, timeout=None)
     rPose = TransformStamped()
     rPose.header.frame_id = 'camera_pose_frame'
     rPose.child_frame_id = 'robot_pose_frame'

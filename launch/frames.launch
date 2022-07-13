@@ -1,4 +1,0 @@
-<launch>
-	<node name="robot_odom_frame" pkg="climbing_robot" type="robot_odom_frame.py"/>
-	<node name="robot_pose_frame" pkg="climbing_robot" type="robot_pose_frame.py"/>
-</launch>

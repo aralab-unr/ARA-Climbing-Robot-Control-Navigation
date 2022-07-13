@@ -31,10 +31,8 @@ def GUI():
     default_font = ('normal', 15)
     rate=rospy.Rate(10)    
     pub=rospy.Publisher('Target', Point,queue_size=10)
-    startTracking=rospy.Publisher('startTracking', BoolParameter,queue_size=10)
-    track = BoolParameter()
-    track.value=True
-    startTracking.publish(track)
+
+    rospy.wait_for_message('/camera/odom/sample', Odometry, timeout=None)
 
     uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
     roslaunch.configure_logging(uuid)
@@ -61,6 +59,7 @@ def GUI():
                                                             sg.Input(s=5,key='ZIN',justification='center',pad=((2,3),0))],
 
                                                         [sg.Button("Exit")]], font=default_font)
+    
     while not rospy.is_shutdown():
     # while True:
         event, values = window.read(timeout=0)
