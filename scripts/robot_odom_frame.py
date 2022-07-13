@@ -11,7 +11,6 @@ def broadcast():
     listener = tf2_ros.TransformListener(tfBuffer)
     rPos = TransformStamped()
     waiting = True
-    
     while waiting:
         try:
             rPos = tfBuffer.lookup_transform('camera_odom_frame','robot_pose_frame', rospy.Time())
