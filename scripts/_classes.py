@@ -5,7 +5,8 @@ from tf2_geometry_msgs import PointStamped, PoseStamped
 import numpy as np
 
 class Surface:
-	def __init__(self, id='robot_odom_frame', xMin=0, xMax=0, yMin=0, yMax=0, zMin=0, zMax=0, xDim=0, yDim=0):
+	# def __init__(self, id='robot_odom_frame', xMin=0, xMax=0, yMin=0, yMax=0, zMin=0, zMax=0, xDim=0, yDim=0):
+	def __init__(self, id='camera_odom_frame', xMin=0, xMax=0, yMin=0, yMax=0, zMin=0, zMax=0, xDim=0, yDim=0):
 		self.id = id
 		self.xMin = xMin
 		self.xMax = xMax
@@ -19,7 +20,8 @@ class Surface:
 	def getFrame(self, frame_rotation):
 		frame = TransformStamped()
 		frame.header.stamp = rospy.Time.now()
-		frame.header.frame_id = 'robot_odom_frame'
+		frame.header.frame_id = 'camera_odom_frame'
+        # frame.header.frame_id = 'robot_odom_frame'
 		frame.child_frame_id = self.id
 		frame.transform.translation = Point(self.xMin, self.yMin, self.zMin)
 		frame.transform.rotation = frame_rotation
@@ -34,7 +36,7 @@ class Surfaces:
     zDim = 1.317
     xOffset = 0.5
     yOffset = -0.361
-    zOffset = 0
+    zOffset = -0.19
     
     surfaceA = Surface('surfaceA', xOffset, (xOffset + xDim), yOffset, (yOffset + yDim), (zOffset + zDim), (zOffset + zDim), xDim, yDim)
     surfaceB = Surface('surfaceB', xOffset, xOffset, yOffset, (yOffset + yDim), zOffset, (zOffset + zDim), zDim, yDim)
@@ -130,5 +132,6 @@ class FindEdge:
             elif source_pos.point.x < target_pos.point.x and source_pos.point.y > target_pos.point.y:
                 q.pose = Pose(target_pos.point,self.QUATERNIONS[7])
 
-        q = tfBuffer.transform(q, 'robot_odom_frame', rospy.Duration(10))
+        # q = tfBuffer.transform(q, 'robot_odom_frame', rospy.Duration(10))
+        q = tfBuffer.transform(q, 'camera_odom_frame', rospy.Duration(10))
         return Edge(source,target,dist,q.pose.orientation)

@@ -2,5 +2,4 @@
     <node name='rviz' pkg='rviz' type ='rviz' args = '-d /home/aralab/catkin_ws/src/climbing_robot/launch/climbing_robot.rviz'/>
     <node name='model' pkg='climbing_robot' type='pathModel.py'/>
     <node name='controller' pkg='climbing_robot' type='potentialField.py'/>
-    <!-- <node name='GUI' pkg='climbing_robot' type='GUI.py'/> -->
 </launch>

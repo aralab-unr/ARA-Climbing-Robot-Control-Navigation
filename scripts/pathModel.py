@@ -41,11 +41,13 @@ def findEndTransform(end, targetNode, tfBuffer, frame_id):
 	e.pose = Pose(end.pos.point, Quaternion(0,0,ez,ew))
 	e.header.frame_id = targetNode.surface.id
 	# transform pose into the base frame
-	e = tfBuffer.transform(e, 'robot_odom_frame', rospy.Duration(10))
+	# e = tfBuffer.transform(e, 'robot_odom_frame', rospy.Duration(10))
+	e = tfBuffer.transform(e, 'camera_odom_frame', rospy.Duration(10))
 	et = TransformStamped()
 	et.transform.translation = Vector3(end.pos.point.x, end.pos.point.y, end.pos.point.z)
 	et.transform.rotation = e.pose.orientation
-	et.header.frame_id = 'robot_odom_frame'
+	# et.header.frame_id = 'robot_odom_frame'
+	et.header.frame_id = 'camera_odom_frame'
 	et.child_frame_id = str(frame_id)
 	return et
 
@@ -71,11 +73,13 @@ def findStartTransform(start, minS, tfBuffer):
 	s.pose = Pose(start.pos.point, Quaternion(0,0,sz,sw))
 	s.header.frame_id = minS.surface.id
 	# transform pose into the base frame
-	s = tfBuffer.transform(s, 'robot_odom_frame', rospy.Duration(10))
+	# s = tfBuffer.transform(s, 'robot_odom_frame', rospy.Duration(10))
+	s = tfBuffer.transform(s, 'camera_odom_frame', rospy.Duration(10))
 	st = TransformStamped()
 	st.transform.translation = Vector3(start.pos.point.x, start.pos.point.y, start.pos.point.z)
 	st.transform.rotation = s.pose.orientation
-	st.header.frame_id = 'robot_odom_frame'
+	# st.header.frame_id = 'robot_odom_frame'
+	st.header.frame_id = 'camera_odom_frame'
 	st.child_frame_id = '1'
 	return st
 
@@ -91,21 +95,25 @@ def findPath(msg,tfBuffer):
 	# find current pose of robot
 	# current_pose = tfBuffer.lookup_transform('robot_pose_frame','robot_odom_frame', rospy.Time())
 	rospy.wait_for_message('/camera/odom/sample', Odometry, timeout=5)
-	current_pose = tfBuffer.lookup_transform('robot_pose_frame','robot_odom_frame', rospy.Time())
+	# current_pose = tfBuffer.lookup_transform('robot_pose_frame','robot_odom_frame', rospy.Time())
+	current_pose = tfBuffer.lookup_transform('camera_pose_frame','camera_odom_frame', rospy.Time())
 
 	# create path finding object
 	findPath = Star()
 
 	# set starting vertice to current position of robot
 	start = Vertice()
-	start.pos.point = Point(current_pose.transform.translation.x, current_pose.transform.translation.y, current_pose.transform.translation.z)
+	start.pos.point = Point(current_pose.transform.translation.x, current_pose.transform.translation.y, current_pose.transform.translation.z - 0.19)
 	start.id = 'start'
-	start.pos.header.frame_id = 'robot_odom_frame'
+	# start.pos.header.frame_id = 'robot_odom_frame'
+	start.pos.header.frame_id = 'camera_odom_frame'
 
 	# set goal vertice to Target message
 	end = Vertice()
 	end.pos.point = msg
-	end.pos.header.frame_id = 'robot_odom_frame'
+	end.pos.point.z = end.pos.point.z - 0.19
+	# end.pos.header.frame_id = 'robot_odom_frame'
+	end.pos.header.frame_id = 'camera_odom_frame'
 	end.id = 'end'
 
 
@@ -148,7 +156,8 @@ def findPath(msg,tfBuffer):
 
 	# visualize path
 	path = Marker()
-	path.header.frame_id = "robot_odom_frame"
+	# path.header.frame_id = "robot_odom_frame"
+	path.header.frame_id = "camera_odom_frame"
 	path.header.stamp = rospy.get_rostime()
 	path.type = path.LINE_LIST
 	path.action = path.ADD
@@ -180,7 +189,8 @@ def findPath(msg,tfBuffer):
 		t = TransformStamped()
 		t.transform = Transform(Vector3(pathEdges[pathNodes[i]].target.pos.point.x, pathEdges[pathNodes[i]].target.pos.point.y, pathEdges[pathNodes[i]].target.pos.point.z), 
 										pathEdges[pathNodes[i]].rotation)
-		t.header.frame_id = 'robot_odom_frame'
+		# t.header.frame_id = 'robot_odom_frame'		
+		t.header.frame_id = 'camera_odom_frame'
 		t.child_frame_id = str(i)
 		pathPoints.path.append(t)
 		end_frame_id = i+1
@@ -222,7 +232,8 @@ def pathModel():
 	#====Build Structure Model===
 	# Create base surface model
 	surface=Marker()
-	surface.header.frame_id = "robot_odom_frame"
+	# surface.header.frame_id = "robot_odom_frame"
+	surface.header.frame_id = "camera_odom_frame"
 	surface.header.stamp = rospy.get_rostime()
 	surface.ns = "Namespace"
 	surface.id = id
@@ -342,9 +353,11 @@ def pathModel():
 		
 	# Transform point from surface frame to base frame and create marker
 	for p in points:
-		p.pos = tfBuffer.transform(p.frame_pos, 'robot_odom_frame', rospy.Duration(10))
+		# p.pos = tfBuffer.transform(p.frame_pos, 'robot_odom_frame', rospy.Duration(10))
+		p.pos = tfBuffer.transform(p.frame_pos, 'camera_odom_frame', rospy.Duration(10))
 		vertice = Marker()
-		vertice.header.frame_id = "robot_odom_frame"
+		# vertice.header.frame_id = "robot_odom_frame"
+		vertice.header.frame_id = "camera_odom_frame"
 		vertice.header.stamp = rospy.get_rostime()
 		vertice.type = vertice.SPHERE
 		vertice.action = vertice.ADD
@@ -389,7 +402,8 @@ def pathModel():
 
 	# visualize connections between vertices	
 	line = Marker()
-	line.header.frame_id = "robot_odom_frame"
+	# line.header.frame_id = "robot_odom_frame"
+	line.header.frame_id = "camera_odom_frame"
 	line.header.stamp = rospy.get_rostime()
 	line.type = vertice.LINE_LIST
 	line.action = vertice.ADD

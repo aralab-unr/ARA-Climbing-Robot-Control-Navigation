@@ -17,19 +17,22 @@ def potentialField(msg):
     # Publisher to topic arduino is listening to
     # controller.data format:[front wheel steering, back wheel steering, front wheel rotation, back wheel rotation]
     pub = rospy.Publisher('wheelAndSteer', std_msgs.msg.Float32MultiArray, queue_size=1)
-    reachPub = rospy.Publisher('Reach',bool,queue_size=10)
+    reachPub = rospy.Publisher('Reach',BoolParameter,queue_size=10)
     controller = std_msgs.msg.Float32MultiArray()
-    controller.data = [1500,1500,1600,1600]         # set all to 0
+    controller.data = [0,0,0,0]         # set all to 0
     pub.publish(controller)
-    reachPub.publish(False)
+    print("start")
+    
 
     vr_max = 0.25                               # set maximum of robot velocity (m/s)
     vr = 0
-    wheel_rotation_max = np.pi / 3              # set maximum wheel rotation angle (rad)
+    wheel_rotation_max = np.pi / 2              # set maximum wheel rotation angle (rad)
     reached = 0.1                              # set radius to reach waypoint
 
     i = 0                                       # initialize waypoint iterator
-    end = False
+    end = BoolParameter()
+    end.value = False
+    reachPub.publish(end)
     
     while not end.value:
         connecting = True
@@ -37,9 +40,10 @@ def potentialField(msg):
         while connecting:       # get transformation between robot frame and waypoint frame (1 : len(msg.path))
             try:
                 # trans = tfBuffer.lookup_transform('robot_pose_frame', str(i+1), rospy.Time())
-                trans = tfBuffer.lookup_transform('robot_pose_frame', str(i+1), rospy.Time())
+                trans = tfBuffer.lookup_transform('camera_pose_frame', str(i+1), rospy.Time())
                 connecting = False
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                print("connecting")
                 continue
 
         # Find normal distance between robot and waypoint
@@ -51,16 +55,17 @@ def potentialField(msg):
         v_rd = dist
         # limit max velocity
         v_rd = np.minimum(v_rd,vr_max)
+        vr = v_rd
 
         # limit acceleration of robot
-        if vr < v_rd:
-            vr += 0.005
-            if vr > v_rd:
-                vr = v_rd
-        elif vr > v_rd:
-            vr -= 0.005
-            if vr < v_rd:
-                vr = v_rd
+        # if vr < v_rd:
+        #     vr += 0.005
+        #     if vr > v_rd:
+        #         vr = v_rd
+        # elif vr > v_rd:
+        #     vr -= 0.005
+        #     if vr < v_rd:
+        #         vr = v_rd
 
         # limit maximum rotation (correcting for +/- angles)
         if yaw > 0:
@@ -71,6 +76,7 @@ def potentialField(msg):
         # Iterate to next waypoint if within reach radius of waypoint
         if(dist < reached):
             i += 1
+            # wheel_rotation = 0
             # If reached final waypoint, set controls to 0 and end loop
             if msg.path[i].transform.translation == msg.path[len(msg.path)-1].transform.translation:
                 vr = 0
@@ -82,23 +88,10 @@ def potentialField(msg):
         # convert control values to servo value range 
             # Steering 1500 = 0, 900 - 2100
             # Wheel rotation 1600 = 0, 800 - 2400
-        fs = int(1500 - wheel_rotation / wheel_rotation_max * 600)
-        bs = int(1500 + wheel_rotation / wheel_rotation_max * 600)
-        fw = int(1600 + vr / vr_max * 400)
-        bw = int(1600 - vr / vr_max * 400)
-
-        os.system('clear')
-        print("=====================================")
-        print("Waypoint: ", msg.path[i].child_frame_id)
-        print("waypoint pos:", msg.path[i].transform.translation.x, msg.path[i].transform.translation.y, msg.path[i].transform.translation.z)
-        # print("distance from waypoint (xyz):", trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z)
-        print("distance from waypoint (norm):", dist)
-        # print("velocity:", vr)
-        # print("rotation towards waypoint (Euler): %f %f %f" %(roll, pitch, yaw))
-        print("turning angle:", wheel_rotation)
-        # print("wheel steering input:", fs, bs)
-        # print("wheel motor input:", fw, bw)
-        print("=====================================")
+        fs = int(wheel_rotation / wheel_rotation_max)
+        bs = int(wheel_rotation / wheel_rotation_max)
+        fw = int(vr / vr_max)
+        bw = int(vr / vr_max)
 
         controller.data = [fs,bs,fw,bw]
         pub.publish(controller)
@@ -106,12 +99,13 @@ def potentialField(msg):
         rate.sleep()
 
 def idle():
-    rospy.init_node('Controller')
+    rospy.init_node('Potential Field')
     while not rospy.is_shutdown():
-        rospy.Subscriber('generated_path', Path, potentialField)
-        rospy.spin
+        path=rospy.wait_for_message('generated_path', Path)
+        potentialField(path)
         
 if __name__ == '__main__':
     try:
         idle()
-    except rospy.ROSInterruptException: pass
+    except rospy.ROSInterruptException: 
+        pass
